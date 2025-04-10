@@ -1,0 +1,71 @@
+# Connect to Microsoft Graph with required scopes
+Connect-MgGraph -Scopes "User.ReadWrite.All", "Directory.ReadWrite.All", "Group.ReadWrite.All"
+
+# Secure Password Input
+$Password = Read-Host "Enter the user password" -AsSecureString
+
+# Define User Attributes
+$displayname = "Test User2"
+$mailnickname = "Tuser2"
+$UserPrincipalName = "Tuser2@purusroot.onmicrosoft.com"
+
+# Function to check if the user already exists
+function Check-UserExists($userPrincipalName) {
+    $existingUser = Get-MgUser -UserPrincipalName $userPrincipalName -ErrorAction SilentlyContinue
+    return $existingUser
+}
+
+# Function to create a new user
+function Create-NewUser($displayname, $mailnickname, $UserPrincipalName, $PasswordProfile) {
+    try {
+        $newUser = New-MgUser -DisplayName $displayname `
+                              -MailNickname $mailnickname `
+                              -UserPrincipalName $UserPrincipalName `
+                              -PasswordProfile $PasswordProfile `
+                              -AccountEnabled:$true
+        Write-Host "User $displayname created successfully."
+        return $newUser
+    } catch {
+        Write-Error "Error creating user: $($_.Exception.Message)"
+        exit
+    }
+}
+
+# Check if user already exists
+$existingUser = Check-UserExists -userPrincipalName $UserPrincipalName
+if ($existingUser) {
+    Write-Host "User $UserPrincipalName already exists. Exiting script."
+    exit
+}
+
+# Define the Password Profile
+$PasswordProfile = @{
+    Password                             = $Password
+    ForceChangePasswordNextSignIn        = $true
+    ForceChangePasswordNextSignInWithMfa = $true
+}
+
+# Create Microsoft Entra ID user
+$newUser = Create-NewUser -displayname $displayname `
+                          -mailnickname $mailnickname `
+                          -UserPrincipalName $UserPrincipalName `
+                          -PasswordProfile $PasswordProfile
+
+# Group IDs
+$groupIds = @(
+    "751262e4-d71b-4e50-88c1-7e653be34fd0",  # M365-LICENCE-ALLSTAFF-E5
+    "ee72e8a6-5d08-44cd-81a0-a46c15256ba2",  # All Users
+    "7393c845-a979-479c-bd00-5ebb4c073a6d",  # Purus - Standard EMEA - SIG
+    "09c5f1d4-1bde-40ac-a6a1-8dfa5306d17d",  # Purus Group
+    "d276e455-c556-4cdb-b63b-1ce869ce22dd"   # Purus Swansea
+)
+
+# Add the user to the specified groups
+foreach ($groupId in $groupIds) {
+    try {
+        New-MgGroupMember -GroupId $groupId -DirectoryObjectId $newUser.Id
+        Write-Host "User added to group $groupId successfully."
+    } catch {
+        Write-Error "Error adding user to group ${groupId}: $($_.Exception.Message)"
+    }
+}
