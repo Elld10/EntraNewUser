@@ -1,0 +1,54 @@
+# -------------------------------------------------
+# 🔓 Set Exchange Online login credentials
+# -------------------------------------------------
+$UserPrincipalName = "edavies-a@purus.com"
+$PlainTextPassword = "Friday21+"  # Password stored in plain text (not secure)
+
+# Convert the plain text password into a SecureString
+$SecurePassword = ConvertTo-SecureString $PlainTextPassword -AsPlainText -Force
+
+# Convert the SecureString password into a PSCredential object
+$Credentials = New-Object System.Management.Automation.PSCredential($UserPrincipalName, $SecurePassword)
+
+# -------------------------------------------------
+# ✅ Automatically connect to Exchange Online
+# -------------------------------------------------
+Connect-ExchangeOnline -Credential $Credentials -ShowProgress $true
+
+# -------------------------------------------------
+# 📋 Select Distribution Groups and User
+# -------------------------------------------------
+
+# Get all distribution groups
+$distributionGroups = Get-DistributionGroup | Select-Object DisplayName, PrimarySmtpAddress
+
+# Let user select MULTIPLE distribution groups
+$selectedGroups = $distributionGroups | Out-GridView -Title "Select Distribution Groups" -PassThru
+
+# Get all user mailboxes
+$userMailboxes = Get-Mailbox -RecipientTypeDetails UserMailbox | Select-Object DisplayName, UserPrincipalName
+
+# Let user select a SINGLE user
+$selectedUser = $userMailboxes | Out-GridView -Title "Select ONE User to Add" -PassThru
+
+# -------------------------------------------------
+# ➕ Add the user to selected distribution groups
+# -------------------------------------------------
+
+if ($null -ne $selectedGroups -and $selectedGroups.Count -gt 0 -and $null -ne $selectedUser) {
+    foreach ($group in $selectedGroups) {
+        try {
+            Add-DistributionGroupMember -Identity $group.PrimarySmtpAddress -Member $selectedUser.UserPrincipalName
+            Write-Host "✔ Added $($selectedUser.UserPrincipalName) to $($group.DisplayName)"
+        } catch {
+            Write-Warning "⚠ Failed to add user to $($group.DisplayName): $_"
+        }
+    }
+} else {
+    Write-Host "Selection cancelled or incomplete. No changes made."
+}
+
+# -------------------------------------------------
+# 🔚 Disconnect Exchange Session
+# -------------------------------------------------
+Disconnect-ExchangeOnline -Confirm:$false
