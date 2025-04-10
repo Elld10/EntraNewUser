@@ -1,193 +1,72 @@
-# Load the Windows Forms Assembly
-Add-Type -AssemblyName "System.Windows.Forms"
+# -------------------------------------------------
+# 🔓 Set Office 365 login credentials
+# -------------------------------------------------
+$UserPrincipalName = "edavies-a@purus.com"
+$PlainTextPassword = "Friday21+"  # Password stored in plain text (not secure)
 
-# Define the list of groups (group names)
-$groupNames = @(
-    "M365-LICENCE-ALLSTAFF-E5",
-    "All Users",
-    "Purus - Standard EMEA - SIG",
-    "Purus Group",
-    "Purus Swansea"
+# Convert the plain text password into a SecureString
+$SecurePassword = ConvertTo-SecureString $PlainTextPassword -AsPlainText -Force
+
+# Convert the SecureString password into a PSCredential object
+$Credentials = New-Object System.Management.Automation.PSCredential($UserPrincipalName, $SecurePassword)
+
+# -------------------------------------------------
+# ✅ Automatically connect to Office 365 (Microsoft 365)
+# -------------------------------------------------
+Connect-MsolService -Credential $Credentials
+
+# -------------------------------------------------
+# 📋 Select Specific Groups by Object IDs
+# -------------------------------------------------
+
+# Specify the Object IDs of the groups
+$groupObjectIds = @(
+    "ee72e8a6-5d08-44cd-81a0-a46c15256ba2",
+    "751262e4-d71b-4e50-88c1-7e653be34fd0"
 )
 
-# Group IDs corresponding to group names
-$groupIds = @{
-    "M365-LICENCE-ALLSTAFF-E5"          = "751262e4-d71b-4e50-88c1-7e653be34fd0"
-    "All Users"                         = "ee72e8a6-5d08-44cd-81a0-a46c15256ba2"
-    "Purus - Standard EMEA - SIG"       = "7393c845-a979-479c-bd00-5ebb4c073a6d"
-    "Purus Group"                       = "09c5f1d4-1bde-40ac-a6a1-8dfa5306d17d"
-    "Purus Swansea"                     = "d276e455-c556-4cdb-b63b-1ce869ce22dd"
+# Retrieve the groups using their Object IDs
+$groups = Get-MsolGroup | Where-Object { $groupObjectIds -contains $_.ObjectId }
+
+# Check if the groups exist
+if ($groups.Count -eq 0) {
+    Write-Host "❌ No groups found with the specified Object IDs."
+    exit
 }
 
-# Function to create a form with checkboxes for group selection
-function Show-GroupSelectionForm {
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = 'Select Groups to Add User'
-    $form.Width = 400
-    $form.Height = 300
+# Display the groups found
+Write-Host "Found the following groups:"
+$groups | ForEach-Object { Write-Host "✔ Group: $($_.DisplayName) - Object ID: $($_.ObjectId)" }
 
-    # Create CheckBoxes for each group
-    $checkboxes = @()
-    $groupNames | ForEach-Object {
-        $checkbox = New-Object System.Windows.Forms.CheckBox
-        $checkbox.Text = $_
-        $checkbox.Width = 350
-        $checkbox.Top = 30 * $checkboxes.Count + 20
-        $checkbox.Left = 20
-        $checkboxes += $checkbox
-        $form.Controls.Add($checkbox)
+# -------------------------------------------------
+# 📋 Select All Users
+# -------------------------------------------------
+
+# Get all Office 365 users
+$allUsers = Get-MsolUser | Select-Object DisplayName, UserPrincipalName
+
+# Let the user select MULTIPLE users from the grid view
+$selectedUsers = $allUsers | Out-GridView -Title "Select Users to Add" -PassThru
+
+# -------------------------------------------------
+# ➕ Add the selected users to the groups
+# -------------------------------------------------
+if ($null -ne $selectedUsers -and $selectedUsers.Count -gt 0) {
+    foreach ($user in $selectedUsers) {
+        foreach ($group in $groups) {
+            try {
+                Add-MsolGroupMember -GroupObjectId $group.ObjectId -GroupMemberObjectId $user.ObjectId
+                Write-Host "✔ Added $($user.UserPrincipalName) to $($group.DisplayName)"
+            } catch {
+                Write-Warning "⚠ Failed to add user $($user.UserPrincipalName) to $($group.DisplayName): $_"
+            }
+        }
     }
-
-    # Add an "OK" Button to confirm selection
-    $okButton = New-Object System.Windows.Forms.Button
-    $okButton.Text = 'OK'
-    $okButton.Width = 100
-    $okButton.Top = $checkboxes[-1].Top + 40
-    $okButton.Left = ($form.Width - $okButton.Width) / 2
-    $okButton.Add_Click({
-        $selectedGroups = $checkboxes | Where-Object { $_.Checked } | ForEach-Object { $_.Text }
-        $form.Tag = $selectedGroups
-        $form.Close()
-    })
-    $form.Controls.Add($okButton)
-
-    # Display the form and return selected groups
-    $form.ShowDialog()
-
-    # Return the selected groups
-    return $form.Tag
-}
-
-# Connect to Microsoft Graph with required scopes
-Connect-MgGraph -Scopes "User.ReadWrite.All", "Directory.ReadWrite.All", "Group.ReadWrite.All"
-
-# Secure Password Input using GUI
-function Show-PasswordDialog {
-    # Create the password dialog form
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = 'Enter Password'
-    $form.Width = 300
-    $form.Height = 200
-
-    # Create password label
-    $label = New-Object System.Windows.Forms.Label
-    $label.Text = "Please enter the password:"
-    $label.Width = 260
-    $label.Top = 20
-    $label.Left = 20
-    $form.Controls.Add($label)
-
-    # Create PasswordBox
-    $passwordBox = New-Object System.Windows.Forms.MaskedTextBox
-    $passwordBox.Width = 260
-    $passwordBox.Top = 50
-    $passwordBox.Left = 20
-    $passwordBox.UseSystemPasswordChar = $true
-    $form.Controls.Add($passwordBox)
-
-    # Create OK button
-    $okButton = New-Object System.Windows.Forms.Button
-    $okButton.Text = 'OK'
-    $okButton.Width = 100
-    $okButton.Top = 100
-    $okButton.Left = ($form.Width - $okButton.Width) / 2
-    $okButton.Add_Click({
-        $form.Tag = $passwordBox.Text
-        $form.Close()
-    })
-    $form.Controls.Add($okButton)
-
-    # Show form and wait for user input
-    $form.ShowDialog()
-
-    # Return the entered password
-    return $form.Tag
-}
-
-# Define User Attributes
-$displayname = "Test User2"
-$mailnickname = "Tuser2"
-$UserPrincipalName = "Tuser2@purusroot.onmicrosoft.com"
-
-# Function to check if the user already exists
-function Check-UserExists($userPrincipalName) {
-    $existingUser = Get-MgUser -UserPrincipalName $userPrincipalName -ErrorAction SilentlyContinue
-    return $existingUser
-}
-
-# Function to create a new user
-function Create-NewUser($displayname, $mailnickname, $UserPrincipalName, $PasswordProfile) {
-    try {
-        $newUser = New-MgUser -DisplayName $displayname `
-                              -MailNickname $mailnickname `
-                              -UserPrincipalName $UserPrincipalName `
-                              -PasswordProfile $PasswordProfile `
-                              -AccountEnabled:$true
-        Write-Host "User $displayname created successfully."
-        return $newUser
-    } catch {
-        Write-Error "Error creating user: $($_.Exception.Message)"
-        exit
-    }
-}
-
-# Check if user already exists
-$existingUser = Check-UserExists -userPrincipalName $UserPrincipalName
-if ($existingUser) {
-    Write-Host "User $UserPrincipalName already exists. Exiting script."
-    exit
-}
-
-# Ask for password input using GUI pop-up
-$password = Show-PasswordDialog
-if ($password -eq $null) {
-    Write-Host "Password not provided, exiting script."
-    exit
-}
-
-# Define the Password Profile
-$PasswordProfile = @{
-    Password                             = $password
-    ForceChangePasswordNextSignIn        = $true
-    ForceChangePasswordNextSignInWithMfa = $true
-}
-
-# Create Microsoft Entra ID user
-$newUser = Create-NewUser -displayname $displayname `
-                          -mailnickname $mailnickname `
-                          -UserPrincipalName $UserPrincipalName `
-                          -PasswordProfile $PasswordProfile
-
-# Ensure $newUser is created successfully
-if ($newUser -eq $null) {
-    Write-Error "User creation failed, exiting script."
-    exit
-}
-
-# Call the group selection form to add user to groups
-$selectedGroups = Show-GroupSelectionForm
-
-# Check if groups were selected and display accordingly
-if ($selectedGroups.Count -gt 0) {
-    Write-Host "User will be added to the following groups:"
-    $selectedGroups | ForEach-Object { Write-Host $_ }
 } else {
-    Write-Host "No groups selected. Exiting."
-    exit
+    Write-Host "Selection cancelled or incomplete. No changes made."
 }
 
-# Proceed to add the user to the selected groups
-$groupIds.GetEnumerator() | Where-Object { $selectedGroups -contains $_.Key } | ForEach-Object {
-    $groupName = $_.Key
-    $groupId = $_.Value
-
-    # Debugging message
-    Write-Host "Attempting to add user to group: $groupName (Group ID: $groupId)"
-
-    try {
-        New-MgGroupMember -GroupId $groupId -DirectoryObjectId $newUser.Id
-        Write-Host "User added to group $groupName successfully."
-    } catch {
-        Write-Error "Error adding user to group ${groupName}: $($($_.Exception.Message))"
-    }
-}
+# -------------------------------------------------
+# 🔚 Disconnect Office 365 Session
+# -------------------------------------------------
+Disconnect-MsolService
